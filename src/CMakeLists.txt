@@ -24,3 +24,4 @@ endif()
 if (NOT MSVC)
     install(TARGETS ${PROJECT_NAME} LIBRARY)
 endif()
+
