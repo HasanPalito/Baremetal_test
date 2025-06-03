@@ -8,7 +8,6 @@
 using namespace std;
 
 int main(){
-    std::cout << "successful" << std::endl;
     
     diskann::Metric metric = diskann::L2;
             

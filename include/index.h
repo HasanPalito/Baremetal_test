@@ -29,6 +29,9 @@
 #define EXPAND_IF_FULL 0
 #define DEFAULT_MAXC 750
 
+template <typename T, typename TagT, typename LabelT>
+class DebugFriend;
+
 namespace diskann
 {
 
@@ -51,6 +54,7 @@ template <typename T, typename TagT = uint32_t, typename LabelT = uint32_t> clas
      * acquire these locks. They might acquire locks on _locks[i]
      *
      **************************************************************************/
+    friend class DebugFriend<T, TagT, LabelT>;
 
   public:
     // Constructor for Bulk operations and for creating the index object solely
