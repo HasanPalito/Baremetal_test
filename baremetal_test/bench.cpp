@@ -64,7 +64,7 @@ public:
         
         uint32_t qps = (uint32_t)(query_num / diff.count());
         std::cout << "Query per second: " << qps << std::endl;
-        std::cout << "Recalls: "<< recalls[99] << std::endl;
+        std::cout << "Recalls: "<< recalls[recall_at-1] << std::endl;
 
         return std::make_tuple(qps, recalls);
     }
@@ -75,22 +75,23 @@ int main(){
     diskann::Metric metric = diskann::L2;
 
     float alpha = 1.2f;             
-    uint32_t num_threads = 4;  
-    uint32_t R = 64;                
-    uint32_t L = 100;               
+    uint32_t num_threads = 8;  
+    uint32_t R = 8;                
+    uint32_t L = 100;    
+    uint32_t max_L = 350;            
     uint32_t build_PQ_bytes = 0;    
     bool use_opq = false;
     std::string data_type = "float";          
     std::string label_file = "";    
     std::string universal_label = ""; 
     std::string label_type = "uint";
-    std::string data_path = "../data/sift_learn.fbin";
+    std::string data_path = "../data/sift_base.fbin";
     std::string index_path_prefix = "../data/TestIndex/TEST";
-    std::string tags_file = "../data/generated_sift_learn.tags";
-    std::string truth_set_file= "../data/sift_query_learn_gt100";
+    std::string tags_file = "../data/tag_for_1m.tags";
+    std::string truth_set_file= "../data/1m_point_truth_set";
     std::string query_file = "../data/sift_query.fbin";
     uint32_t data_dim = 128;
-    const size_t data_num = 100000;
+    const size_t data_num = 1000000;
     bool use_pq_build = false;
     using TagT = uint32_t;
     using T = float;
@@ -98,10 +99,10 @@ int main(){
     std::vector<double> recalls;
     
 
-    uint32_t recall_at = 100;
+    uint32_t recall_at = 10;
 
     // Build index parameters
-    auto index_write_params = diskann::IndexWriteParametersBuilder(L, R)
+    auto index_write_params = diskann::IndexWriteParametersBuilder(max_L, R)
                                       .with_alpha(alpha)
                                       .with_saturate_graph(false)
                                       .with_num_threads(num_threads)
@@ -136,7 +137,13 @@ int main(){
 
     auto index = index_factory.create_instance();
     auto concrete_index = static_cast<diskann::Index<float>*>(index.get());
+    auto start = std::chrono::high_resolution_clock::now();
     concrete_index->build(data_path.c_str(),  data_num, tags_file.c_str());
+    auto end = std::chrono::high_resolution_clock::now();
+    auto time_to_build = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    cout << "time taken to build index: " << time_to_build << " milliseconds" << std::endl;
+    std::chrono::duration<double> build_duration = end - start;
+    std::cout << "Index build time: " << build_duration.count() << " seconds" << std::endl;
 
     DebugFriend<float, uint32_t, uint32_t>::clean_empty_slots(*concrete_index);
     DebugFriend<float, uint32_t, uint32_t>::print_internal(*concrete_index);
@@ -153,7 +160,7 @@ int main(){
     DebugFriend<float, uint32_t, uint32_t>::calculate_recall(*concrete_index, truth_set_file, num_threads,
                                             query, query_aligned_dim, query_num, recall_at, L);
                                             
-    std::string path = "../data/ground_truth";
+    std::string path = "../data/ground_truth_1m";
     int a = 100000;
     std::vector<fs::directory_entry> files;
     for (const auto& entry : fs::directory_iterator(path)) {
@@ -165,8 +172,11 @@ int main(){
         return a.path().filename() < b.path().filename();
     });
     std::string result_file = "../data/result.csv";
+    std::string ef_search_res_file = "../data/ef_search_result.csv";
     std::ofstream file(result_file);
-    file << "Num_point,Qps,recall@100\n";
+    std::ofstream ef_search_file(ef_search_res_file);
+    file << "Num_point,Qps,recall@10,time_to_delete\n";
+    ef_search_file << "Num_point,L_size,Qps,recall@100\n";
     for (const auto& entry : files) {
         count = 0;
         tsl::robin_set<uint32_t> tags;
@@ -177,20 +187,27 @@ int main(){
                 assert(status == 0);
             }
         }
-        concrete_index->consolidate_deletes(index_write_params);
+        auto report = concrete_index->consolidate_deletes(index_write_params);
         DebugFriend<float, uint32_t, uint32_t>::print_internal(*concrete_index);
         std::string truth_set_file_reduced= entry.path().string();
         std::cout << "Processing truth set file: " << truth_set_file_reduced << std::endl;
         auto [qps, recalls] =DebugFriend<float, uint32_t, uint32_t>::calculate_recall(*concrete_index, truth_set_file_reduced, num_threads,
                                             query, query_aligned_dim, query_num, recall_at, L);
+
+        for (uint L_x=10; L_x <= 310; L_x += 15) {
+            auto [qps, recalls] =DebugFriend<float, uint32_t, uint32_t>::calculate_recall(*concrete_index, truth_set_file_reduced, num_threads,
+                                            query, query_aligned_dim, query_num, recall_at, L_x);
+            ef_search_file << a << "," << L_x << "," << qps << "," << recalls[9] << "\n";
+        }
         a -= 10000;
-        file << a << "," << qps << "," << recalls[99] << "\n";
+        file << a << "," << qps << "," << recalls[9] << "," << report._time << "\n";
         std::cout << "A: " << a << std::endl;
     }
     file.close();
+    index.reset();
     //index2 is for the baseline test
 
-    std::string freduced_path= "../data/cleaned";
+    std::string freduced_path= "../data/1m_point";
     std::vector<fs::directory_entry> freduced;
     for (const auto& entry : fs::directory_iterator(freduced_path)) {
         if (entry.is_regular_file()) {
@@ -203,10 +220,12 @@ int main(){
     });
 
     auto data_num_baseline = data_num - 10000;
+    std::string baseline_ef_search_file = "../data/ef_search_baseline.csv";
     std::string baseline_file = "../data/baseline.csv";
     std::ofstream baseline(baseline_file);
+    std::ofstream baseline_ef_search(baseline_ef_search_file);
 
-    baseline << "Num_point,Qps,recall@100\n";
+    baseline << "Num_point,Qps,recall@10,time_to_build\n";
     for (size_t i = 0; i < freduced.size(); ++i) {
         
         auto index2= index_factory.create_instance();
@@ -214,12 +233,21 @@ int main(){
         std::cout << "Pair " << i + 1 << ":\n";
         std::cout << "  " << files[i].path() << "\n";
         std::cout << "  " << freduced[i].path() << "\n";
+        auto start = std::chrono::high_resolution_clock::now();
         concrete_index2->build(freduced[i].path().string().c_str(),  data_num_baseline, tags_file.c_str());
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - start;
         DebugFriend<float, uint32_t, uint32_t>::clean_empty_slots(*concrete_index2);
         auto [qps, recalls] = DebugFriend<float, uint32_t, uint32_t>::calculate_recall(*concrete_index2, files[i].path().string(), num_threads,
                                             query, query_aligned_dim, query_num, recall_at, L);
+        
+        for (uint L_x=10; L_x <= 310; L_x += 15) {
+            auto [qps, recalls] = DebugFriend<float, uint32_t, uint32_t>::calculate_recall(*concrete_index2, files[i].path().string(), num_threads,
+                                            query, query_aligned_dim, query_num, recall_at, L_x);
+            baseline_ef_search << data_num_baseline << "," << L_x << "," << qps << "," << recalls[9] << "\n";
+        }
 
-        baseline << data_num_baseline << "," << qps << "," << recalls[99] << "\n";
+        baseline << data_num_baseline << "," << qps << "," << recalls[9] << "," << diff.count() << "\n";
         index2.reset();
         data_num_baseline -= 10000;
     }
