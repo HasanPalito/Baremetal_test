@@ -145,6 +145,20 @@ int main(){
     std::chrono::duration<double> build_duration = end - start;
     std::cout << "Index build time: " << build_duration.count() << " seconds" << std::endl;
 
+    std::string result_file = "../data/result.csv";
+    std::string ef_search_res_file = "../data/ef_search_result.csv";
+    std::ofstream file(result_file);
+    std::ofstream ef_search_file(ef_search_res_file);
+    file << "Num_point,Qps,recall@10,time_to_delete\n";
+    ef_search_file << "Num_point,L_size,Qps,recall@10\n";
+    std::string one_m_file = "../data/1m_base.csv"; 
+    std::ofstream base_file(one_m_file);
+    base_file << "L_size,Qps,recall@10\n"; 
+    std::string baseline_ef_search_file = "../data/ef_search_baseline.csv";
+    std::string baseline_file = "../data/baseline.csv";
+    std::ofstream baseline(baseline_file);
+    std::ofstream baseline_ef_search(baseline_ef_search_file);
+    
     DebugFriend<float, uint32_t, uint32_t>::clean_empty_slots(*concrete_index);
     DebugFriend<float, uint32_t, uint32_t>::print_internal(*concrete_index);
     
@@ -157,12 +171,13 @@ int main(){
     size_t query_num, query_dim, query_aligned_dim, gt_num, gt_dim;
     diskann::load_aligned_bin<T>(query_file, query, query_num, query_dim, query_aligned_dim);
 
-    DebugFriend<float, uint32_t, uint32_t>::calculate_recall(*concrete_index, truth_set_file, num_threads,
+    auto [qps, recalls] = DebugFriend<float, uint32_t, uint32_t>::calculate_recall(*concrete_index, truth_set_file, num_threads,
                                             query, query_aligned_dim, query_num, recall_at, L);
-    std::string one_m_file = "../data/1m_base.csv"; 
-         
-    std::ofstream base_file(one_m_file);
-    base_file << "L_size,Qps,recall@10\n";                                  
+
+    file << data_num << "," << qps << "," << recalls[9] << "," << 0<< "\n";
+    baseline << data_num << "," << qps << "," << recalls[9] << "," << time_to_build << "\n";
+    
+
     for (uint L_x=10; L_x <= 310; L_x += 15) {
             auto [qps, recalls] =DebugFriend<float, uint32_t, uint32_t>::calculate_recall(*concrete_index, truth_set_file, num_threads,
                                             query, query_aligned_dim, query_num, recall_at, L_x);
@@ -182,12 +197,7 @@ int main(){
     std::sort(files.begin(), files.end(), [](const fs::directory_entry& a, const fs::directory_entry& b) {
         return a.path().filename() < b.path().filename();
     });
-    std::string result_file = "../data/result.csv";
-    std::string ef_search_res_file = "../data/ef_search_result.csv";
-    std::ofstream file(result_file);
-    std::ofstream ef_search_file(ef_search_res_file);
-    file << "Num_point,Qps,recall@10,time_to_delete\n";
-    ef_search_file << "Num_point,L_size,Qps,recall@10\n";
+    
     for (const auto& entry : files) {
         count = 0;
         tsl::robin_set<uint32_t> tags;
@@ -231,10 +241,6 @@ int main(){
     });
 
     auto data_num_baseline = data_num - 100000;
-    std::string baseline_ef_search_file = "../data/ef_search_baseline.csv";
-    std::string baseline_file = "../data/baseline.csv";
-    std::ofstream baseline(baseline_file);
-    std::ofstream baseline_ef_search(baseline_ef_search_file);
 
     baseline << "Num_point,Qps,recall@10,time_to_build\n";
     for (size_t i = 0; i < freduced.size(); ++i) {
