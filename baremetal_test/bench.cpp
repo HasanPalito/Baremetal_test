@@ -159,6 +159,17 @@ int main(){
 
     DebugFriend<float, uint32_t, uint32_t>::calculate_recall(*concrete_index, truth_set_file, num_threads,
                                             query, query_aligned_dim, query_num, recall_at, L);
+    std::string one_m_file = "../data/1m_base.csv"; 
+         
+    std::ofstream base_file(one_m_file);
+    base_file << "L_size,Qps,recall@10\n";                                  
+    for (uint L_x=10; L_x <= 310; L_x += 15) {
+            auto [qps, recalls] =DebugFriend<float, uint32_t, uint32_t>::calculate_recall(*concrete_index, truth_set_file, num_threads,
+                                            query, query_aligned_dim, query_num, recall_at, L_x);
+            base_file << L_x << "," << qps << "," << recalls[9] << "\n";    
+    }
+
+
                                             
     std::string path = "../data/ground_truth_1m";
     int a = 100000;
@@ -176,13 +187,13 @@ int main(){
     std::ofstream file(result_file);
     std::ofstream ef_search_file(ef_search_res_file);
     file << "Num_point,Qps,recall@10,time_to_delete\n";
-    ef_search_file << "Num_point,L_size,Qps,recall@100\n";
+    ef_search_file << "Num_point,L_size,Qps,recall@10\n";
     for (const auto& entry : files) {
         count = 0;
         tsl::robin_set<uint32_t> tags;
         concrete_index->get_active_tags(tags);
         for (auto tag : tags) {
-            if (count++ >= a-10000 && count <= a) {
+            if (count++ >= a-100000 && count <= a) {
                 int status = concrete_index->lazy_delete(tag);
                 assert(status == 0);
             }
@@ -199,7 +210,7 @@ int main(){
                                             query, query_aligned_dim, query_num, recall_at, L_x);
             ef_search_file << a << "," << L_x << "," << qps << "," << recalls[9] << "\n";
         }
-        a -= 10000;
+        a -= 100000;
         file << a << "," << qps << "," << recalls[9] << "," << report._time << "\n";
         std::cout << "A: " << a << std::endl;
     }
@@ -219,7 +230,7 @@ int main(){
         return a.path().filename() < b.path().filename();
     });
 
-    auto data_num_baseline = data_num - 10000;
+    auto data_num_baseline = data_num - 100000;
     std::string baseline_ef_search_file = "../data/ef_search_baseline.csv";
     std::string baseline_file = "../data/baseline.csv";
     std::ofstream baseline(baseline_file);
@@ -249,7 +260,7 @@ int main(){
 
         baseline << data_num_baseline << "," << qps << "," << recalls[9] << "," << diff.count() << "\n";
         index2.reset();
-        data_num_baseline -= 10000;
+        data_num_baseline -= 100000;
     }
     file.close();
     return 0;
