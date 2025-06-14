@@ -96,7 +96,6 @@ int main(){
     using TagT = uint32_t;
     using T = float;
     using LabelT = uint32_t;
-    std::vector<double> recalls;
     
 
     uint32_t recall_at = 10;
