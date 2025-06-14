@@ -21,9 +21,9 @@ int main(){
     std::string label_file = "";    
     std::string universal_label = ""; 
     std::string label_type = "uint";
-    std::string data_path = "data/sift_learn.fbin";
-    std::string index_path_prefix = "data/TestIndex/TEST";
-    std::string tags_file = "data/sift_learn.tags";
+    std::string data_path = "../data/sift_learn.fbin";
+    std::string index_path_prefix = "../data/TestIndex/TEST";
+    std::string tags_file = "../data/sift_learn.tags";
     uint32_t data_dim = 128;
     const size_t data_num = 100000;
     bool use_pq_build = false;
@@ -71,7 +71,7 @@ int main(){
 
     //building index
     concrete_index->build(data_path.c_str(),  data_num, tags_file.c_str());
-    //concrete_index->save(index_path_prefix.c_str());
+    concrete_index->save(index_path_prefix.c_str());
 
     //inserting dynamicly (with tags)
     vector<float> vector(100);
