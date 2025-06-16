@@ -44,7 +44,7 @@ public:
         std::vector<T *> res = std::vector<T *>(); 
         auto s = std::chrono::high_resolution_clock::now();
         omp_set_num_threads(num_threads);
-        #pragma omp parallel for schedule(dynamic, 1)
+        #pragma omp parallel for schedule(static)
         for (int64_t i = start_query_num; i < (int64_t)end_query_num; i++){
             idx.search_with_tags(query + i * query_aligned_dim, recall_at, L,
                                             query_result_tags.data() + i * recall_at, nullptr, res, false,"" );
@@ -62,7 +62,7 @@ public:
         std::vector<T *> res = std::vector<T *>(); 
         auto s = std::chrono::high_resolution_clock::now();
         omp_set_num_threads(num_threads);
-        #pragma omp parallel for schedule(dynamic, 1)
+        #pragma omp parallel for schedule(static)
         for (int64_t i = start_query_num; i < (int64_t)end_query_num; i++){
             //auto timestamp = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
             auto status=idx.insert_point(query + i * query_aligned_dim, generate_uint64_from_uuid());
