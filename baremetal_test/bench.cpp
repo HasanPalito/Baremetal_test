@@ -71,12 +71,13 @@ public:
 
 };
 
-int main(){
+int main(int argc, char* argv[]){
     diskann::Metric metric = diskann::L2;
+    std::string suffix = argv[1];
 
     float alpha = 1.2f;             
     uint32_t num_threads = 8;  
-    uint32_t R = 8;                
+    uint32_t R = 32;                
     uint32_t L = 100;    
     uint32_t max_L = 350;            
     uint32_t build_PQ_bytes = 0;    
@@ -144,8 +145,8 @@ int main(){
     std::chrono::duration<double> build_duration = end - start;
     std::cout << "Index build time: " << build_duration.count() << " seconds" << std::endl;
 
-    std::string result_file = "../data/result.csv";
-    std::string ef_search_res_file = "../data/ef_search_result.csv";
+    std::string result_file = "../data/result"+ suffix + ".csv";
+    std::string ef_search_res_file = "../data/ef_search_result" + suffix + ".csv";
     std::ofstream file(result_file);
     std::ofstream ef_search_file(ef_search_res_file);
     file << "Num_point,Qps,recall@10,time_to_delete\n";
@@ -153,8 +154,8 @@ int main(){
     std::string one_m_file = "../data/1m_base.csv"; 
     std::ofstream base_file(one_m_file);
     base_file << "L_size,Qps,recall@10\n"; 
-    std::string baseline_ef_search_file = "../data/ef_search_baseline.csv";
-    std::string baseline_file = "../data/baseline.csv";
+    std::string baseline_ef_search_file = "../data/ef_search_baseline" + suffix + ".csv";
+    std::string baseline_file = "../data/baseline" + suffix + ".csv";
     std::ofstream baseline(baseline_file);
     std::ofstream baseline_ef_search(baseline_ef_search_file);
     
@@ -239,7 +240,7 @@ int main(){
         return a.path().filename() < b.path().filename();
     });
 
-    auto data_num_baseline = data_num - 100000;
+    auto data_num_baseline = data_num ;
 
     baseline << "Num_point,Qps,recall@10,time_to_build\n";
     for (size_t i = 0; i < freduced.size(); ++i) {

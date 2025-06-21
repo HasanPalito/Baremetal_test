@@ -43,16 +43,13 @@ public:
         std::vector<uint64_t> query_result_tags(recall_at * (end_query_num - start_query_num));
         std::vector<T *> res = std::vector<T *>(); 
         auto s = std::chrono::high_resolution_clock::now();
-        omp_set_num_threads(num_threads);
-        #pragma omp parallel for schedule(static)
         for (int64_t i = start_query_num; i < (int64_t)end_query_num; i++){
             idx.search_with_tags(query + i * query_aligned_dim, recall_at, L,
-                                            query_result_tags.data() + i * recall_at, nullptr, res, false,"" );
-
+                                            query_result_tags.data() + (i - start_query_num) * recall_at, nullptr, res, false,"" );
 
         }
         std::chrono::duration<double> diff = std::chrono::high_resolution_clock::now() - s;
-        qps = (uint32_t)(((end_query_num - start_query_num) / diff.count())/ num_threads);
+        qps = (uint32_t)(((end_query_num - start_query_num) / diff.count()));
         cout << "Total time for search: " << diff.count() << " seconds" << std::endl;
 
     }
@@ -61,8 +58,6 @@ public:
         std::vector<uint64_t> query_result_tags(recall_at * (end_query_num - start_query_num));
         std::vector<T *> res = std::vector<T *>(); 
         auto s = std::chrono::high_resolution_clock::now();
-        omp_set_num_threads(num_threads);
-        #pragma omp parallel for schedule(static)
         for (int64_t i = start_query_num; i < (int64_t)end_query_num; i++){
             //auto timestamp = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
             auto status=idx.insert_point(query + i * query_aligned_dim, generate_uint64_from_uuid());
@@ -72,19 +67,58 @@ public:
             assert(status == 0);
         }
         std::chrono::duration<double> diff = std::chrono::high_resolution_clock::now() - s;
-        qps = (uint32_t)(((end_query_num - start_query_num) / diff.count())/ num_threads);
+        qps = (uint32_t)(((end_query_num - start_query_num) / diff.count()));
         cout << "Total time for insert: " << diff.count() << " seconds" << std::endl;
     }
 
+    static void split_workload_search(diskann::Index<T, TagT, LabelT>& idx, uint16_t num_threads,
+        T *query,size_t query_aligned_dim,size_t start_query_num,size_t end_query_num,uint32_t recall_at,uint32_t L,float &qps) {
+        std::vector<std::thread> threads;
+        cout << "Splitting workload for search across " << num_threads << " threads." << std::endl;
+        auto total_queries = end_query_num - start_query_num;
+        auto chunk_size = total_queries / num_threads;
+        std::vector<float> qpss(num_threads, 0.0f);
+        for (int i = 0; i < num_threads; ++i) {
+            size_t start = start_query_num + i * chunk_size;
+            size_t end = (i == num_threads - 1) ? end_query_num : start + chunk_size;
+            cout << "bound start " << start << ", end " << end << " for thread " << i << std::endl;
+            threads.emplace_back(DebugFriend<T, TagT, LabelT>::batch_search, std::ref(idx), num_threads, query, query_aligned_dim, start, end, recall_at, L, std::ref(qpss[i]));
+        }
+        for (auto& thread : threads) {
+            thread.join();
+        }
+        qps = std::accumulate(qpss.begin(), qpss.end(), 0.0f) / num_threads; // Average QPS across threads
+    }
+
+    static void split_workload_insert(diskann::Index<T, TagT, LabelT>& idx, uint16_t num_threads,
+        T *query,size_t query_aligned_dim,size_t start_query_num,size_t end_query_num,uint32_t recall_at,uint32_t L,float &qps) {
+        std::vector<std::thread> threads;
+        auto total_queries = end_query_num - start_query_num;
+        auto chunk_size = total_queries / num_threads;
+        cout << "Splitting workload for insert across " << num_threads << " threads." << std::endl;
+        std::vector<float> qpss(num_threads, 0.0f);
+        for (int i = 0; i < num_threads; ++i) {
+            size_t start = start_query_num + i * chunk_size;
+            size_t end = (i == num_threads - 1) ? end_query_num : start + chunk_size;
+            cout << "bound start " << start << ", end " << end << " for thread " << i << std::endl;
+            threads.emplace_back(DebugFriend<T, TagT, LabelT>::batch_insert, std::ref(idx), num_threads, query, query_aligned_dim, start, end, recall_at, L, std::ref(qpss[i]));
+        }
+        for (auto& thread : threads) {
+            thread.join();
+        }
+        qps = std::accumulate(qpss.begin(), qpss.end(), 0.0f)/num_threads; // Average QPS across threads
+    }
 
 };
 
+
 int main(int argc, char* argv[]){
+
     diskann::Metric metric = diskann::L2;
-    std::string suffix = argv[1];
+
     float alpha = 1.2f;             
     uint32_t num_threads = 8;  
-    uint32_t R = 32;                
+    uint32_t R = 8;                
     uint32_t L = 10;    
     uint32_t max_L = 350;            
     uint32_t build_PQ_bytes = 0;    
@@ -96,9 +130,10 @@ int main(int argc, char* argv[]){
     std::string data_path = "../data/sift_learn.fbin";
     std::string index_path_prefix = "../data/TestIndex/TEST";
     std::string tags_file = "../data/sift_64.tags";
+    std::string truth_set_file= "../data/1m_point_truth_set";
     std::string query_file = "../data/sift_query.fbin";
     uint32_t data_dim = 128;
-    size_t data_num = 1000000;
+    size_t data_num = 100000;
     bool use_pq_build = false;
     using TagT = uint64_t;
     using T = float;
@@ -142,6 +177,10 @@ int main(int argc, char* argv[]){
 
     auto index = index_factory.create_instance();
     auto concrete_index = static_cast<diskann::Index<float, uint64_t>*>(index.get());
+    concrete_index->build(data_path.c_str(),  data_num, tags_file.c_str());
+    DebugFriend<float, uint64_t, uint32_t>::clean_empty_slots(*concrete_index);
+    concrete_index->save(index_path_prefix.c_str(),true);
+    cout << "Index built and saved successfully." << std::endl;
     T *query = nullptr;
     size_t query_num, query_dim, query_aligned_dim, gt_num, gt_dim;
     diskann::load_aligned_bin<T>(query_file, query, query_num, query_dim, query_aligned_dim);
@@ -163,7 +202,7 @@ int main(int argc, char* argv[]){
         return a.path().filename() < b.path().filename();
     });
 
-    std::string result_file  = "../data/multithreaded" + suffix + ".csv";
+    std::string result_file = "../data/multithreaded.csv";
     std::ofstream result(result_file);
     result << "Num_point,concurent Qps insert,concurent Qps search,baseline Qps insert,baseline Qps search,num_thread\n";
 
@@ -175,13 +214,14 @@ int main(int argc, char* argv[]){
             auto new_concrete_index = static_cast<diskann::Index<float, uint64_t, uint32_t>*>(new_index.get());
             std::cout << "Loading index for thread " << i << std::endl;
             new_concrete_index->build(entry.path().string().c_str(),  data_num, tags_file.c_str());
+            //new_concrete_index->load(index_path_prefix.c_str(),4,L);
             DebugFriend<float, uint64_t, uint32_t>::clean_empty_slots(*new_concrete_index);
             DebugFriend<float, uint64_t, uint32_t>::print_internal(*new_concrete_index);
             std::thread t1([&, i]() {
-                DebugFriend<float, uint64_t, uint32_t>::batch_search(*new_concrete_index, i, query, query_aligned_dim, 0, 5000, recall_at, L, qps_search);
+                DebugFriend<float, uint64_t, uint32_t>::split_workload_search(*new_concrete_index, i, query, query_aligned_dim, 0, 5000, recall_at, L, qps_search);
             });
             std::thread t2([&, i]() {
-                DebugFriend<float, uint64_t, uint32_t>::batch_insert(*new_concrete_index, i, query, query_aligned_dim, 5000, 10000, recall_at, L, qps_insert);
+                DebugFriend<float, uint64_t, uint32_t>::split_workload_insert(*new_concrete_index, i, query, query_aligned_dim, 5000, 10000, recall_at, L, qps_insert);
             });
             t1.join();
             t2.join();
@@ -192,13 +232,13 @@ int main(int argc, char* argv[]){
             new_baseline_concrete_index->build(entry.path().string().c_str(),  data_num, tags_file.c_str());
             DebugFriend<float, uint64_t, uint32_t>::clean_empty_slots(*new_baseline_concrete_index);
             DebugFriend<float, uint64_t, uint32_t>::print_internal(*new_baseline_concrete_index);
-            DebugFriend<float, uint64_t, uint32_t>::batch_search(*new_baseline_concrete_index, i, query, query_aligned_dim, 0, 5000, recall_at, L, qps_search_baseline);
-            DebugFriend<float, uint64_t, uint32_t>::batch_insert(*new_baseline_concrete_index, i, query, query_aligned_dim, 5000, 10000, recall_at, L, qps_insert_baseline);
+            DebugFriend<float, uint64_t, uint32_t>::split_workload_search(*new_baseline_concrete_index, i, query, query_aligned_dim, 0, 5000, recall_at, L, qps_search_baseline);
+            DebugFriend<float, uint64_t, uint32_t>::split_workload_insert(*new_baseline_concrete_index, i, query, query_aligned_dim, 5000, 10000, recall_at, L, qps_insert_baseline);
             std::cout << "QPS Search: " << qps_search_baseline << ", QPS Insert: " << qps_insert_baseline << " num_thread: " << i << " baseline" << std::endl;
-            result << data_num << "," << qps_insert << "," << qps_search << "," << qps_insert_baseline << "," << qps_search_baseline << "," << i << "\n";
+            result << data_num << ","<< static_cast<int>(qps_insert) << ","<< static_cast<int>(qps_search) << ","<< static_cast<int>(qps_insert_baseline) << ","<< static_cast<int>(qps_search_baseline) << ","<< i << "\n";
         }
 
-        data_num -= 100000; 
+        data_num -= 10000; 
     }
 
 
