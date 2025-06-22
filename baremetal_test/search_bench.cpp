@@ -12,13 +12,6 @@
 namespace fs = std::filesystem;
 using namespace std;
 
-uint64_t generate_uint64_from_uuid() {
-    boost::uuids::uuid unique_id = boost::uuids::random_generator()();
-    
-    uint64_t first_half = *reinterpret_cast<const uint64_t*>(&unique_id.data[0]);
-    uint64_t second_half = *reinterpret_cast<const uint64_t*>(&unique_id.data[8]);
-    return first_half ^ second_half;
-}
 
 template <typename T, typename TagT, typename LabelT>
 class DebugFriend {
@@ -40,12 +33,12 @@ public:
 
     static void batch_search( diskann::Index<T, TagT, LabelT>& idx, uint16_t num_threads,
         T *query,size_t query_aligned_dim,size_t start_query_num,size_t end_query_num,uint32_t recall_at,uint32_t L,float &qps){
-        std::vector<uint64_t> query_result_tags(recall_at * (end_query_num - start_query_num));
+        std::vector<uint32_t> query_result_tags(recall_at * (end_query_num - start_query_num));
         std::vector<T *> res = std::vector<T *>(); 
         auto s = std::chrono::high_resolution_clock::now();
         omp_set_num_threads(num_threads);
         #pragma omp parallel for schedule(static)
-        for (int64_t i = start_query_num; i < (int64_t)end_query_num; i++){
+        for (int32_t i = start_query_num; i < (int32_t)end_query_num; i++){
             idx.search_with_tags(query + i * query_aligned_dim, recall_at, L,
                                             query_result_tags.data() + i * recall_at, nullptr, res, false,"" );
 
@@ -56,36 +49,16 @@ public:
         cout << "Total time for search: " << diff.count() << " seconds" << std::endl;
 
     }
-    static void batch_insert( diskann::Index<T, TagT, LabelT>& idx, uint16_t num_threads,
-        T *query,size_t query_aligned_dim,size_t start_query_num,size_t end_query_num,uint32_t recall_at,uint32_t L,float &qps){
-        std::vector<uint64_t> query_result_tags(recall_at * (end_query_num - start_query_num));
-        std::vector<T *> res = std::vector<T *>(); 
-        auto s = std::chrono::high_resolution_clock::now();
-        omp_set_num_threads(num_threads);
-        #pragma omp parallel for schedule(static)
-        for (int64_t i = start_query_num; i < (int64_t)end_query_num; i++){
-            //auto timestamp = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
-            auto status=idx.insert_point(query + i * query_aligned_dim, generate_uint64_from_uuid());
-            if(status !=0){
-                cout << "failed insert at " << i-start_query_num  << std::endl;
-            }
-            assert(status == 0);
-        }
-        std::chrono::duration<double> diff = std::chrono::high_resolution_clock::now() - s;
-        qps = (uint32_t)(((end_query_num - start_query_num) / diff.count())/ num_threads);
-        cout << "Total time for insert: " << diff.count() << " seconds" << std::endl;
-    }
-
 
 };
 
-int main(){
+int main(int argc, char* argv[]){
     diskann::Metric metric = diskann::L2;
-
+    std::string suffix = argv[1];
     float alpha = 1.2f;             
-    uint32_t num_threads = 8;  
+    uint32_t num_threads = 32;  
     uint32_t R = 32;                
-    uint32_t L = 10;    
+    uint32_t L = 100;    
     uint32_t max_L = 350;            
     uint32_t build_PQ_bytes = 0;    
     bool use_opq = false;
@@ -93,9 +66,9 @@ int main(){
     std::string label_file = "";    
     std::string universal_label = ""; 
     std::string label_type = "uint";
-    std::string data_path = "../data/sift_learn.fbin";
+    std::string data_path = "../data/sift_0.fbin";
     std::string index_path_prefix = "../data/TestIndex/TEST";
-    std::string tags_file = "../data/sift_64.tags";
+    std::string tags_file = "../data/tag_for_1m.tags";
     std::string truth_set_file= "../data/1m_point_truth_set";
     std::string query_file = "../data/sift_query.fbin";
     uint32_t data_dim = 128;
@@ -142,10 +115,9 @@ int main(){
     auto index_factory = diskann::IndexFactory(config);
 
     auto index = index_factory.create_instance();
-    auto concrete_index = static_cast<diskann::Index<float, uint64_t>*>(index.get());
+    auto concrete_index = static_cast<diskann::Index<float, uint32_t>*>(index.get());
     concrete_index->build(data_path.c_str(),  data_num, tags_file.c_str());
-    DebugFriend<float, uint64_t, uint32_t>::clean_empty_slots(*concrete_index);
-    concrete_index->save(index_path_prefix.c_str(),true);
+    DebugFriend<float, uint32_t, uint32_t>::clean_empty_slots(*concrete_index);
     cout << "Index built and saved successfully." << std::endl;
     T *query = nullptr;
     size_t query_num, query_dim, query_aligned_dim, gt_num, gt_dim;
@@ -156,44 +128,14 @@ int main(){
     float qps_search_baseline;
     float qps_insert_baseline;
 
-    std::string data_dir= "../data/100k_sift";
-    std::vector<fs::directory_entry> data_files;
-    for (const auto& entry : fs::directory_iterator(data_dir)) {
-        if (entry.is_regular_file()) {
-            data_files.push_back(entry);
-        }
-    }
-
-    std::sort(data_files.begin(), data_files.end(), [](const auto& a, const auto& b) {
-        return a.path().filename() < b.path().filename();
-    });
-
-    std::string result_file = "../data/multithreaded.csv";
+    std::string result_file = "../data/batch_search" +suffix+ ".csv";
     std::ofstream result(result_file);
-    result << "Num_point,baseline Qps,num_thread\n";
-
-    DebugFriend<float, uint64_t, uint32_t>::print_internal(*concrete_index);
-    for (const auto& entry : data_files) {
-        std::cout << "Data file: " << entry.path() << std::endl;
-        for(int i=1; i<=omp_get_num_procs()/2; i++){
-            auto new_index = index_factory.create_instance();
-            auto new_concrete_index = static_cast<diskann::Index<float, uint64_t, uint32_t>*>(new_index.get());
-            std::cout << "Loading index for thread " << i << std::endl;
-            new_concrete_index->build(entry.path().string().c_str(),  data_num, tags_file.c_str());
-            std::cout << "QPS Search: " << qps_search << ", QPS Insert: " << qps_insert << " num_thread: " << i << std::endl;
-            auto new_baseline_index = index_factory.create_instance();
-            auto new_baseline_concrete_index = static_cast<diskann::Index<float, uint64_t, uint32_t>*>(new_baseline_index.get());
-            std::cout << "Loading index for thread " << i << std::endl;
-            new_baseline_concrete_index->build(entry.path().string().c_str(),  data_num, tags_file.c_str());
-            DebugFriend<float, uint64_t, uint32_t>::clean_empty_slots(*new_baseline_concrete_index);
-            DebugFriend<float, uint64_t, uint32_t>::print_internal(*new_baseline_concrete_index);
-            DebugFriend<float, uint64_t, uint32_t>::batch_search(*new_baseline_concrete_index, i, query, query_aligned_dim, 0, 5000, recall_at, L, qps_search_baseline);
-
-            result << data_num << "," << qps_search_baseline << "," << i << "\n";
-        }
-
-        data_num -= 10000; 
+    result << "baseline Qps,num_thread\n";
+    for(int i=1; i<=omp_get_num_procs(); i++){
+        DebugFriend<float, uint32_t, uint32_t>::batch_search(*concrete_index, i, query, query_aligned_dim, 0, 10000, recall_at, L, qps_search_baseline);
+        result << qps_search_baseline << "," << i << "\n";
     }
+
 
 
     return 0;

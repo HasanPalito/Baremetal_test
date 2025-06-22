@@ -30,13 +30,17 @@ public:
     static void insert_and_delete( diskann::Index<T, TagT, LabelT>& idx,
         T *query,size_t query_aligned_dim,uint32_t query_num,diskann::IndexWriteParameters &parameters, uint32_t &ips,uint32_t &dps,uint32_t &dips) {
         auto max_point = idx._nd;
+        worker_done=false;
         uint32_t count_consolidation = 0;
        
         std::vector<float> ipss;
         std::vector<float> dpss;
         std::vector<float> dipss;
+        std::chrono::high_resolution_clock::time_point s;
         for (int32_t i = 1; i < query_num; i++) { 
-            auto s = std::chrono::high_resolution_clock::now();
+            if (count_consolidation == 0) {
+                s = std::chrono::high_resolution_clock::now();
+            }
             count_consolidation++;
             max_point++;
             auto status=idx.insert_point(query + i * query_aligned_dim, max_point);
@@ -48,11 +52,12 @@ public:
             if (count_consolidation == 10000) {
                 std::chrono::duration<double> diff = std::chrono::high_resolution_clock::now() - s;
                 ipss.push_back(count_consolidation / diff.count());
+                cout <<count_consolidation / diff.count() << std::endl;
                 auto report = idx.consolidate_deletes(parameters);
                 dpss.push_back(count_consolidation / report._time);
-                count_consolidation = 0;
                 std::chrono::duration<double> dips = std::chrono::high_resolution_clock::now() - s;
                 dipss.push_back(count_consolidation / dips.count());
+                count_consolidation = 0;
             }
         }
         ips = ipss.empty() ? 0.0f : std::accumulate(ipss.begin(), ipss.end(), 0.0f) / ipss.size();
@@ -67,24 +72,23 @@ public:
         auto s = std::chrono::high_resolution_clock::now();
         uint32_t i = 0;
         omp_set_num_threads(num_threads);
-        uint16_t total_query_done= 0;
+        uint32_t total_query_done= 0;
         while (!worker_done.load()) {
             #pragma omp parallel for schedule(dynamic,1)
             for (uint32_t i=0 ;i<query_num;i++ ){
                 idx.search_with_tags(query + i * query_aligned_dim, recall_at, L,
                                              query_result_tags.data() + i * recall_at, nullptr, res, false,"" );
-                #pragma omp atomic
-                total_query_done++;
 
-                if (!worker_done.load()) {
-                    break;  
-                }
             }
+            cout <<"total_query:"<<query_num<< std::endl;
+            total_query_done = total_query_done + query_num;
+            cout <<"total_query:"<<total_query_done<< std::endl;
             
         }
+        
         std::chrono::duration<double> diff = std::chrono::high_resolution_clock::now() - s;
         qps = (uint32_t)((total_query_done / diff.count()) / num_threads);
-        cout << "Total time for search: " << diff.count() << " seconds" << std::endl;
+        cout <<"total_query:"<<total_query_done<< "Total time for search: " << diff.count() << " seconds" << std::endl;
     }
 
 };
@@ -98,18 +102,18 @@ int main(int argc, char* argv[]){
     diskann::Metric metric = diskann::L2;
     std::string suffix = argv[1];
     float alpha = 1.2f;
-    uint32_t num_threads = 4;
+    uint32_t num_threads = 32;
     uint32_t R = 32;
-    uint32_t L = 10;
+    uint32_t L = 100;
     uint32_t build_PQ_bytes = 0;
     bool use_opq = false;
     std::string data_type = "float";
     std::string label_file = "";    
     std::string universal_label = ""; 
     std::string label_type = "uint";
-    std::string data_path = "../data/1m_point/sift_0.fbin";
+    std::string data_path = "../data/sift_learn.fbin";
     std::string index_path_prefix = "../data/TestIndex/TEST";
-    std::string tags_file = "../data/tag_for_1m.tags";
+    std::string tags_file = "../data/sift_learn.tags";
     std::string query_file = "../data/sift_query.fbin";
     uint32_t data_dim = 128;
     const size_t data_num = 100000;
@@ -131,7 +135,7 @@ int main(int argc, char* argv[]){
     auto config = diskann::IndexConfigBuilder()
                         .with_metric(metric)
                         .with_dimension(data_dim)
-                        .with_max_points(data_num*10 )
+                        .with_max_points(data_num+50000 )
                         .with_data_load_store_strategy(diskann::DataStoreStrategy::MEMORY)
                         .with_graph_load_store_strategy(diskann::GraphStoreStrategy::MEMORY)
                         .with_data_type(data_type)
@@ -166,13 +170,18 @@ int main(int argc, char* argv[]){
     T *query = nullptr;
     size_t query_num, query_dim, query_aligned_dim, gt_num, gt_dim;
     diskann::load_aligned_bin<T>(data_path, query, query_num, query_dim, query_aligned_dim);
-    float qps_search;
     T *query_search = nullptr;
     size_t query_num_search, query_dim_search, query_aligned_dim_search, gt_num_search, gt_dim_search;
     diskann::load_aligned_bin<T>(query_file, query_search, query_num_search, query_dim_search, query_aligned_dim_search);
     uint32_t ips, dps,dips;
     for(int i=1; i<=omp_get_num_procs()/2; i++){
-            //new_concrete_index->load(index_path_prefix.c_str(),4,L);    
+        
+        auto index = index_factory.create_instance();
+        auto concrete_index = static_cast<diskann::Index<float>*>(index.get());
+        float qps_search;
+        concrete_index->build(data_path.c_str(),  data_num, tags_file.c_str());
+        DebugFriend<float, uint32_t, uint32_t>::clean_empty_slots(*concrete_index);
+            //new_concrete_index->load(index_path_prefix.c_str(),4,L);  
         std::thread t1([&, i]() {
             DebugFriend<float, uint32_t, uint32_t>::insert_and_delete(*concrete_index, query, query_aligned_dim, query_num,index_write_params, ips, dps,dips);
         });

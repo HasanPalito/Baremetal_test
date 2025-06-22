@@ -207,6 +207,7 @@ int main(int argc, char* argv[]){
     result << "Num_point,concurent Qps insert,concurent Qps search,baseline Qps insert,baseline Qps search,num_thread\n";
 
     DebugFriend<float, uint64_t, uint32_t>::print_internal(*concrete_index);
+    auto count = 0;
     for (const auto& entry : data_files) {
         std::cout << "Data file: " << entry.path() << std::endl;
         for(int i=1; i<=omp_get_num_procs()/2; i++){
