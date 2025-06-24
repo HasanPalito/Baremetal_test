@@ -187,7 +187,7 @@ int main(int argc, char* argv[]){
 
                                             
     std::string path = "../data/ground_truth_1m";
-    int a = 100000;
+    int a = 1000000;
     std::vector<fs::directory_entry> files;
     for (const auto& entry : fs::directory_iterator(path)) {
         if (entry.is_regular_file()) {

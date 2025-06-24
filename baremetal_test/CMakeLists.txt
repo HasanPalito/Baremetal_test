@@ -111,3 +111,14 @@ target_link_libraries(bench_search
     OpenMP::OpenMP_CXX
     aio    # Ensure OpenMP is linked correctly
 )
+
+add_executable(bench_search_2 ${CMAKE_SOURCE_DIR}/search_bench_not_dynamic.cpp)
+
+# Link against the necessary libraries (DiskANN, Boost, MKL, OpenMP, etc.)
+target_link_libraries(bench_search_2
+    diskann               # Link with the local diskann library
+    Boost::program_options
+    ${MKL_LIBRARIES}    
+    OpenMP::OpenMP_CXX
+    aio    # Ensure OpenMP is linked correctly
+)
