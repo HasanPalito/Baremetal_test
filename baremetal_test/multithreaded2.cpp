@@ -118,8 +118,8 @@ int main(int argc, char* argv[]){
 
     float alpha = 1.2f;             
     uint32_t num_threads = 8;  
-    uint32_t R = 8;                
-    uint32_t L = 10;    
+    uint32_t R = 32;                
+    uint32_t L = 100;    
     uint32_t max_L = 350;            
     uint32_t build_PQ_bytes = 0;    
     bool use_opq = false;
@@ -204,43 +204,39 @@ int main(int argc, char* argv[]){
 
     std::string result_file = "../data/multithreaded.csv";
     std::ofstream result(result_file);
-    result << "Num_point,concurent Qps insert,concurent Qps search,baseline Qps insert,baseline Qps search,num_thread\n";
+    result << "Qps search,num_thread\n";
 
     DebugFriend<float, uint64_t, uint32_t>::print_internal(*concrete_index);
     auto count = 0;
-    for (const auto& entry : data_files) {
-        std::cout << "Data file: " << entry.path() << std::endl;
-        for(int i=1; i<=omp_get_num_procs()/2; i++){
+        for(int i=1; i<=omp_get_num_procs(); i++){
             auto new_index = index_factory.create_instance();
             auto new_concrete_index = static_cast<diskann::Index<float, uint64_t, uint32_t>*>(new_index.get());
             std::cout << "Loading index for thread " << i << std::endl;
-            new_concrete_index->build(entry.path().string().c_str(),  data_num, tags_file.c_str());
+            //new_concrete_index->build(entry.path().string().c_str(),  data_num, tags_file.c_str());
             //new_concrete_index->load(index_path_prefix.c_str(),4,L);
-            DebugFriend<float, uint64_t, uint32_t>::clean_empty_slots(*new_concrete_index);
-            DebugFriend<float, uint64_t, uint32_t>::print_internal(*new_concrete_index);
-            std::thread t1([&, i]() {
-                DebugFriend<float, uint64_t, uint32_t>::split_workload_search(*new_concrete_index, i, query, query_aligned_dim, 0, 5000, recall_at, L, qps_search);
-            });
-            std::thread t2([&, i]() {
-                DebugFriend<float, uint64_t, uint32_t>::split_workload_insert(*new_concrete_index, i, query, query_aligned_dim, 5000, 10000, recall_at, L, qps_insert);
-            });
-            t1.join();
-            t2.join();
-            std::cout << "QPS Search: " << qps_search << ", QPS Insert: " << qps_insert << " num_thread: " << i << std::endl;
+            //DebugFriend<float, uint64_t, uint32_t>::clean_empty_slots(*new_concrete_index);
+            //DebugFriend<float, uint64_t, uint32_t>::print_internal(*new_concrete_index);
+            //std::thread t1([&, i]() {
+            //    DebugFriend<float, uint64_t, uint32_t>::split_workload_search(*new_concrete_index, i, query, query_aligned_dim, 0, 5000, recall_at, L, qps_search);
+            //});
+            //std::thread t2([&, i]() {
+            //    DebugFriend<float, uint64_t, uint32_t>::split_workload_insert(*new_concrete_index, i, query, query_aligned_dim, 5000, 10000, recall_at, L, qps_insert);
+            //});
+            //t1.join();
+            //t2.join();
+            //std::cout << "QPS Search: " << qps_search << ", QPS Insert: " << qps_insert << " num_thread: " << i << std::endl;
             auto new_baseline_index = index_factory.create_instance();
             auto new_baseline_concrete_index = static_cast<diskann::Index<float, uint64_t, uint32_t>*>(new_baseline_index.get());
             std::cout << "Loading index for thread " << i << std::endl;
-            new_baseline_concrete_index->build(entry.path().string().c_str(),  data_num, tags_file.c_str());
+            new_baseline_concrete_index->build(data_path.c_str(),  data_num, tags_file.c_str());
             DebugFriend<float, uint64_t, uint32_t>::clean_empty_slots(*new_baseline_concrete_index);
-            DebugFriend<float, uint64_t, uint32_t>::print_internal(*new_baseline_concrete_index);
-            DebugFriend<float, uint64_t, uint32_t>::split_workload_search(*new_baseline_concrete_index, i, query, query_aligned_dim, 0, 5000, recall_at, L, qps_search_baseline);
-            DebugFriend<float, uint64_t, uint32_t>::split_workload_insert(*new_baseline_concrete_index, i, query, query_aligned_dim, 5000, 10000, recall_at, L, qps_insert_baseline);
-            std::cout << "QPS Search: " << qps_search_baseline << ", QPS Insert: " << qps_insert_baseline << " num_thread: " << i << " baseline" << std::endl;
-            result << data_num << ","<< static_cast<int>(qps_insert) << ","<< static_cast<int>(qps_search) << ","<< static_cast<int>(qps_insert_baseline) << ","<< static_cast<int>(qps_search_baseline) << ","<< i << "\n";
+            //DebugFriend<float, uint64_t, uint32_t>::print_internal(*new_baseline_concrete_index);
+            DebugFriend<float, uint64_t, uint32_t>::split_workload_search(*new_baseline_concrete_index, i, query, query_aligned_dim, 0, 10000, recall_at, L, qps_search_baseline);
+            //DebugFriend<float, uint64_t, uint32_t>::split_workload_insert(*new_baseline_concrete_index, i, query, query_aligned_dim, 5000, 10000, recall_at, L, qps_insert_baseline);
+            std::cout << "QPS Search: " << qps_search_baseline  << std::endl;
+            result << static_cast<int>(qps_search_baseline) << ","<< i << "\n";
         }
 
-        data_num -= 10000; 
-    }
 
 
     return 0;

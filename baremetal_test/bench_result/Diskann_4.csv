@@ -1,0 +1,12 @@
+# started on Tue Jul  1 14:04:43 2025
+
+13199758137,,instructions,5810192528,83.00,0.45,insn per cycle
+29365742021,,cycles,5810670645,83.00,,
+2586982338,,branches,5810549774,83.00,,
+84098136,,branch-misses,5811103240,83.00,3.25,of all branches
+656959309,,cache-references,5811874125,83.00,,
+403344057,,cache-misses,5814255228,83.00,61.40,of all cache refs
+<not supported>,,bus-cycles,0,100.00,,
+201496,,page-faults,6973729108,100.00,,
+315,,context-switches,6973729108,100.00,,
+78,,cpu-migrations,6973729108,100.00,,

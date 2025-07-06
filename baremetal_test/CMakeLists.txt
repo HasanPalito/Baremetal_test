@@ -120,5 +120,35 @@ target_link_libraries(bench_search_2
     Boost::program_options
     ${MKL_LIBRARIES}    
     OpenMP::OpenMP_CXX
-    aio    # Ensure OpenMP is linked correctly
+    aio    
 )
+
+add_executable(brute_search ${CMAKE_SOURCE_DIR}/brute_force.cpp)
+
+# Link against the necessary libraries (DiskANN, Boost, MKL, OpenMP, etc.)
+target_link_libraries(brute_search
+    diskann               # Link with the local diskann library
+    Boost::program_options
+    ${MKL_LIBRARIES}    
+    OpenMP::OpenMP_CXX
+    aio    
+)
+
+
+add_executable(hnsw_bench ${CMAKE_SOURCE_DIR}/HNSW_bench.cpp)
+target_include_directories(hnsw_bench PRIVATE ${CMAKE_SOURCE_DIR}/hnswlib)
+target_link_libraries(hnsw_bench        # Link with the local diskann library  
+    OpenMP::OpenMP_CXX
+    aio    
+)
+
+set(FAISS_ROOT ${CMAKE_SOURCE_DIR}/faiss)
+add_executable(fais_search faiss_bench.cpp)
+
+target_include_directories(fais_search PRIVATE 
+    ${FAISS_ROOT}
+    ${FAISS_ROOT}/build)
+target_link_libraries(fais_search PRIVATE ${FAISS_ROOT}/build/faiss/libfaiss.a 
+    ${MKL_LIBRARIES} 
+    OpenMP::OpenMP_CXX
+    aio)

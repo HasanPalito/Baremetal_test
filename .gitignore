@@ -378,3 +378,5 @@ gperftools
 
 # Rust
 rust/target
+
+baremetal_test/data/

@@ -1,3 +1,6 @@
 [submodule "gperftools"]
 	path = gperftools
 	url = https://github.com/gperftools/gperftools.git
+[submodule "baremetal_test/faiss"]
+	path = baremetal_test/faiss
+	url = https://github.com/facebookresearch/faiss.git

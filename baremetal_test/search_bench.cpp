@@ -9,8 +9,38 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
+#include <iostream>
+#include <cstring>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <sys/syscall.h>
+#include <linux/perf_event.h>
+#include <vector>
+#include <fcntl.h>
 namespace fs = std::filesystem;
 using namespace std;
+
+long perf_event_open(struct perf_event_attr *hw_event, pid_t pid,
+                     int cpu, int group_fd, unsigned long flags) {
+    return syscall(__NR_perf_event_open, hw_event, pid, cpu, group_fd, flags);
+}
+
+
+int open_perf_event(perf_event_attr &pe) {
+    return perf_event_open(&pe, 0, -1, -1, 0);
+}
+
+int create_perf_event(uint32_t type, uint64_t config) {
+    struct perf_event_attr pe{};
+    std::memset(&pe, 0, sizeof(pe));
+    pe.type = type;
+    pe.size = sizeof(pe);
+    pe.config = config;
+    pe.disabled = 1;
+    pe.exclude_kernel = 1;
+    pe.exclude_hv = 1;
+    return open_perf_event(pe);
+}
 
 
 template <typename T, typename TagT, typename LabelT>
@@ -32,19 +62,25 @@ public:
     }
 
     static void batch_search( diskann::Index<T, TagT, LabelT>& idx, uint16_t num_threads,
-        T *query,size_t query_aligned_dim,size_t start_query_num,size_t end_query_num,uint32_t recall_at,uint32_t L,float &qps){
+        T *query,size_t query_aligned_dim,size_t start_query_num,size_t end_query_num,uint32_t recall_at,uint32_t L,float &qps, double &mean_latency){
         std::vector<uint32_t> query_result_tags(recall_at * (end_query_num - start_query_num));
         std::vector<T *> res = std::vector<T *>(); 
         auto s = std::chrono::high_resolution_clock::now();
+        std::vector<float> latency_stats(end_query_num - start_query_num, 0);
         omp_set_num_threads(num_threads);
         #pragma omp parallel for schedule(static)
         for (int32_t i = start_query_num; i < (int32_t)end_query_num; i++){
+
+            auto qs = std::chrono::high_resolution_clock::now();
             idx.search_with_tags(query + i * query_aligned_dim, recall_at, L,
                                             query_result_tags.data() + i * recall_at, nullptr, res, false,"" );
-
-
+            auto qe = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> diff = qe - qs;
+            latency_stats[i] = (float)(diff.count() * 1000000);
         }
+
         std::chrono::duration<double> diff = std::chrono::high_resolution_clock::now() - s;
+        mean_latency =std::accumulate(latency_stats.begin(), latency_stats.end(), 0.0) / static_cast<float>(end_query_num - start_query_num);
         qps = (uint32_t)(((end_query_num - start_query_num) / diff.count())/ num_threads);
         cout << "Total time for search: " << diff.count() << " seconds" << std::endl;
 
@@ -56,7 +92,7 @@ int main(int argc, char* argv[]){
     diskann::Metric metric = diskann::L2;
     std::string suffix = argv[1];
     float alpha = 1.2f;             
-    uint32_t num_threads = 32;  
+    uint32_t num_threads = 12;  
     uint32_t R = 32;                
     uint32_t L = 100;    
     uint32_t max_L = 350;            
@@ -72,12 +108,13 @@ int main(int argc, char* argv[]){
     std::string truth_set_file= "../data/1m_point_truth_set";
     std::string query_file = "../data/sift_query.fbin";
     uint32_t data_dim = 128;
-    size_t data_num = 100000;
+    size_t data_num = 1000000;
     bool use_pq_build = false;
     using TagT = uint64_t;
     using T = float;
     using LabelT = uint32_t;
     std::vector<double> recalls;
+        
     
 
     uint32_t recall_at = 10;
@@ -116,7 +153,14 @@ int main(int argc, char* argv[]){
 
     auto index = index_factory.create_instance();
     auto concrete_index = static_cast<diskann::Index<float, uint32_t>*>(index.get());
-    concrete_index->build(data_path.c_str(),  data_num, tags_file.c_str());
+    struct perf_event_attr pe_faults{};
+    try {
+        concrete_index->load(index_path_prefix.c_str(), num_threads, L);
+    } catch (const std::exception& e) {
+        concrete_index->build(data_path.c_str(),  data_num, tags_file.c_str());
+        concrete_index->save(index_path_prefix.c_str(),true);
+    }
+    
     DebugFriend<float, uint32_t, uint32_t>::clean_empty_slots(*concrete_index);
     cout << "Index built and saved successfully." << std::endl;
     T *query = nullptr;
@@ -127,16 +171,17 @@ int main(int argc, char* argv[]){
     float qps_insert;
     float qps_search_baseline;
     float qps_insert_baseline;
-
+    double mean_latency;
+    int i = std::stoi(suffix); 
     std::string result_file = "../data/batch_search" +suffix+ ".csv";
     std::ofstream result(result_file);
-    result << "baseline Qps,num_thread\n";
-    for(int i=1; i<=omp_get_num_procs(); i++){
-        DebugFriend<float, uint32_t, uint32_t>::batch_search(*concrete_index, i, query, query_aligned_dim, 0, 10000, recall_at, L, qps_search_baseline);
-        result << qps_search_baseline << "," << i << "\n";
+    result << "Qps,mean_latencies,num_thread\n";
+    for(int num_threads=1; num_threads<=omp_get_num_procs(); num_threads++){
+        std::cout << "Running with " << num_threads << " threads." << std::endl;
+        DebugFriend<float, uint32_t, uint32_t>::batch_search(*concrete_index, num_threads, query, query_aligned_dim, 0, 10000, recall_at, L, qps_search_baseline, mean_latency);
+        std::cout << "QPS Search Baseline: " << qps_search_baseline << ", Mean Latency: " << mean_latency << " microseconds" << std::endl;
+        result << qps_search_baseline << "," << mean_latency << "," << num_threads << "\n";
     }
-
-
 
     return 0;
 }

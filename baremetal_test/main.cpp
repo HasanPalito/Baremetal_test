@@ -21,7 +21,7 @@ int main(){
     std::string label_file = "";    
     std::string universal_label = ""; 
     std::string label_type = "uint";
-    std::string data_path = "../data/sift_learn.fbin";
+    std::string data_path = "../data/sift_0.fbin";
     std::string index_path_prefix = "../data/TestIndex/TEST";
     std::string tags_file = "../data/sift_learn.tags";
     uint32_t data_dim = 128;
