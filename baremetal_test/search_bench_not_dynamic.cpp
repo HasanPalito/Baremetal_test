@@ -88,7 +88,7 @@ int main(int argc, char* argv[]){
     std::string bytes = argv[1];
     uint32_t PQ_bytes = static_cast<uint32_t>(std::stoul(bytes));
     float alpha = 1.2f;             
-    uint32_t num_threads = 12;  
+    uint32_t num_threads = omp_get_num_procs();  
     uint32_t R = 32;                
     uint32_t L = 100;    
     uint32_t max_L = 350;            
@@ -98,13 +98,13 @@ int main(int argc, char* argv[]){
     std::string label_file = "";    
     std::string universal_label = ""; 
     std::string label_type = "uint";
-    std::string data_path = "../data/sift_learn.fbin";
+    std::string data_path = "../data/sift_0.fbin";
     std::string index_path_prefix = "../data/TestIndex/TEST" + bytes;
     std::string tags_file = "../data/tags_for_1m.tags";
     std::string truth_set_file= "../data/sift_query_learn_gt100";
     std::string query_file = "../data/sift_query.fbin";
     uint32_t data_dim = 128;
-    size_t data_num = 100000;
+    size_t data_num = 1000000;
     bool use_pq_build = true;
     using TagT = uint64_t;
     using T = float;

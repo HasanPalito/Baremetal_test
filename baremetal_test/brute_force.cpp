@@ -77,7 +77,7 @@ int main(int argc, char* argv[]){
     diskann::Metric metric = diskann::L2;
     std::string suffix = argv[1];
     float alpha = 1.2f;             
-    uint32_t num_threads = 12;  
+    uint32_t num_threads = omp_get_num_procs();  
     uint32_t R = 32;                
     uint32_t L = 100;    
     uint32_t max_L = 350;            
