@@ -4,3 +4,6 @@
 [submodule "baremetal_test/faiss"]
 	path = baremetal_test/faiss
 	url = https://github.com/facebookresearch/faiss.git
+[submodule "baremetal_test/hnswlib"]
+	path = baremetal_test/hnswlib
+	url = https://github.com/nmslib/hnswlib.git
