@@ -2422,8 +2422,8 @@ consolidation_report Index<T, TagT, LabelT>::consolidate_deletes(const IndexWrit
     const uint32_t range = params.max_degree;
     const uint32_t maxc = params.max_occlusion_size;
     const float alpha = params.alpha;
-    const uint32_t num_threads = params.num_threads == 0 ? omp_get_num_procs() : params.num_threads;
-
+    //const uint32_t num_threads = params.num_threads == 0 ? omp_get_num_procs() : params.num_threads;
+    const uint32_t num_threads = 1;
     uint32_t num_calls_to_process_delete = 0;
     diskann::Timer timer;
 #pragma omp parallel for num_threads(num_threads) schedule(dynamic, 8192) reduction(+ : num_calls_to_process_delete)

@@ -66,20 +66,25 @@ public:
         worker_done = true;
     }
 
-    static void simulate_search( diskann::Index<T, TagT, LabelT>& idx, uint16_t num_threads,T *query, size_t query_aligned_dim,uint32_t query_num,uint32_t recall_at,uint32_t L,float &qps){
+    static void simulate_search( diskann::Index<T, TagT, LabelT>& idx, uint16_t num_threads,T *query, size_t query_aligned_dim,uint32_t query_num,uint32_t recall_at,uint32_t L,float &qps,double &mean_latency){
         std::vector<uint32_t> query_result_tags(recall_at * idx._nd);
         std::vector<T *> res = std::vector<T *>();
         auto s = std::chrono::high_resolution_clock::now();
         uint32_t i = 0;
         omp_set_num_threads(num_threads);
         uint32_t total_query_done= 0;
+        std::vector<float> latency_stats(query_num, 0);
         while (!worker_done.load()) {
             #pragma omp parallel for schedule(dynamic,1)
             for (uint32_t i=0 ;i<query_num;i++ ){
+                auto qs = std::chrono::high_resolution_clock::now();
                 idx.search_with_tags(query + i * query_aligned_dim, recall_at, L,
                                              query_result_tags.data() + i * recall_at, nullptr, res, false,"" );
-
+                auto qe = std::chrono::high_resolution_clock::now();
+                std::chrono::duration<double> diff = qe - qs;
+                latency_stats[i] = (float)(diff.count() * 1000000);    
             }
+            mean_latency =std::accumulate(latency_stats.begin(), latency_stats.end(), 0.0) / static_cast<float>(end_query_num - start_query_num);
             cout <<"total_query:"<<query_num<< std::endl;
             total_query_done = total_query_done + query_num;
             cout <<"total_query:"<<total_query_done<< std::endl;
@@ -111,7 +116,7 @@ int main(int argc, char* argv[]){
     std::string label_file = "";    
     std::string universal_label = ""; 
     std::string label_type = "uint";
-    std::string data_path = "../data/sift_learn.fbin";
+    std::string data_path = "../data/sift_base.fbin";
     std::string index_path_prefix = "../data/TestIndex/TEST";
     std::string tags_file = "../data/sift_learn.tags";
     std::string query_file = "../data/sift_query.fbin";
@@ -151,11 +156,12 @@ int main(int argc, char* argv[]){
                         .with_num_pq_chunks(build_PQ_bytes)
                         .with_index_write_params(index_write_params)
                         .with_index_search_params(index_search_params)
+                        .is_concurrent_consolidate(true)
                         .build();
 
     std::string result_file  = "../data/windowed" + suffix + ".csv";
     std::ofstream result(result_file);
-    result << "num_thread,qps,ips,dps,dips\n";
+    result << "num_thread,qps,ips,dps,dips,mean_latency\n";
 
     
     auto index_factory = diskann::IndexFactory(config);
@@ -179,6 +185,7 @@ int main(int argc, char* argv[]){
         auto index = index_factory.create_instance();
         auto concrete_index = static_cast<diskann::Index<float>*>(index.get());
         float qps_search;
+        double mean_latency;
         concrete_index->build(data_path.c_str(),  data_num, tags_file.c_str());
         DebugFriend<float, uint32_t, uint32_t>::clean_empty_slots(*concrete_index);
             //new_concrete_index->load(index_path_prefix.c_str(),4,L);  
@@ -186,11 +193,11 @@ int main(int argc, char* argv[]){
             DebugFriend<float, uint32_t, uint32_t>::insert_and_delete(*concrete_index, query, query_aligned_dim, query_num,index_write_params, ips, dps,dips);
         });
         std::thread t2([&, i]() {
-            DebugFriend<float, uint32_t, uint32_t>::simulate_search(*concrete_index, i, query_search, query_aligned_dim_search,query_num_search, 10, L, qps_search);
+            DebugFriend<float, uint32_t, uint32_t>::simulate_search(*concrete_index, i, query_search, query_aligned_dim_search,query_num_search, 10, L, qps_search,mean_latency);
         });
         t1.join();
         t2.join();
         std::cout << "QPS for search with " << i << " threads: " << qps_search << std::endl;
-        result << i << "," << qps_search << "," << ips << "," << dps << "," << dips << "\n";
+        result << i << "," << qps_search << "," << ips << "," << dps << "," << dips << ","<<mean_latency<<"\n";
     }
 }
