@@ -116,7 +116,8 @@ int main(int argc, char* argv[]){
     std::string label_file = "";    
     std::string universal_label = ""; 
     std::string label_type = "uint";
-    std::string data_path = "../data/sift_base.fbin";
+    std::string data_path = "../data/sift_learn.fbin";
+    std::string inserted_data_path = "../data/sift_base.fbin";
     std::string index_path_prefix = "../data/TestIndex/TEST";
     std::string tags_file = "../data/sift_learn.tags";
     std::string query_file = "../data/sift_query.fbin";
@@ -175,7 +176,7 @@ int main(int argc, char* argv[]){
     DebugFriend<float, uint32_t, uint32_t>::clean_empty_slots(*concrete_index);
     T *query = nullptr;
     size_t query_num, query_dim, query_aligned_dim, gt_num, gt_dim;
-    diskann::load_aligned_bin<T>(data_path, query, query_num, query_dim, query_aligned_dim);
+    diskann::load_aligned_bin<T>(inserted_data_path, query, query_num, query_dim, query_aligned_dim);
     T *query_search = nullptr;
     size_t query_num_search, query_dim_search, query_aligned_dim_search, gt_num_search, gt_dim_search;
     diskann::load_aligned_bin<T>(query_file, query_search, query_num_search, query_dim_search, query_aligned_dim_search);
